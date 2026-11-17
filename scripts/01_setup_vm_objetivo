@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+# ==============================================================================
+# 01_setup_vm_objetivo.sh
+# Mini-SOC TiendaCR — Proyecto 2 (ITI-922 Seguridad de TI II)
+#
+# Qué hace: prepara vm-objetivo (Ubuntu 22.04) con Docker + DVWA, Suricata (IDS)
+# con reglas propias, UFW y el agente de Wazuh.
+#
+# Cómo usarlo: copiar a vm-objetivo y correr como:
+#   chmod +x 01_setup_vm_objetivo.sh
+#   sudo ./01_setup_vm_objetivo.sh <IP_PRIVADA_VM_SIEM> <IP_PUBLICA_ADMIN>
+#
+# Ejemplo:
+#   sudo ./01_setup_vm_objetivo.sh 172.16.0.4 190.211.114.109
+# ==============================================================================
+set -euo pipefail
+
+VM_SIEM_IP="${1:?Falta la IP privada de vm-siem, ej: 172.16.0.4}"
+ADMIN_IP="${2:?Falta la IP pública del equipo administrador}"
+
+echo "==> Actualizando el sistema"
+apt update && apt upgrade -y
+
+echo "==> Instalando Docker"
+apt install -y docker.io
+systemctl enable --now docker
+
+echo "==> Desplegando DVWA (vulnerables/web-dvwa) en el puerto 80"
+docker run -d --name dvwa -p 80:80 vulnerables/web-dvwa
+
+echo "==> Instalando Suricata (repositorio oficial OISF)"
+add-apt-repository -y ppa:oisf/suricata-stable
+apt update
+apt install -y suricata
+
+echo "==> Configurando HOME_NET en suricata.yaml"
+cp /etc/suricata/suricata.yaml /etc/suricata/suricata.yaml.bak
+sed -i 's/HOME_NET: .*/HOME_NET: "[172.16.0.0\/24]"/' /etc/suricata/suricata.yaml
+
+echo "==> Agregando local.rules al listado de reglas"
+cp /etc/suricata/suricata.yaml /etc/suricata/suricata.yaml.bak2
+sed -i '/- suricata.rules/a\  - local.rules' /etc/suricata/suricata.yaml
+
+echo "==> Instalando reglas propias (ver rules/local.rules en el repo)"
+cp "$(dirname "$0")/../rules/local.rules" /var/lib/suricata/rules/local.rules
+
+suricata -T -c /etc/suricata/suricata.yaml -v
+systemctl enable --now suricata
+
+echo "==> Configurando UFW (deny por defecto, allow solo IP admin + puerto 80 público)"
+ufw default deny incoming
+ufw default allow outgoing
+ufw allow from "$ADMIN_IP" to any port 22
+ufw allow 80/tcp
+ufw --force enable
+
+echo "==> Instalando el agente de Wazuh (apuntando a vm-siem: $VM_SIEM_IP)"
+curl -s https://packages.wazuh.com/4.x/apt/pool/main/w/wazuh-agent/wazuh-agent_4.14.0-1_amd64.deb -o /tmp/wazuh-agent.deb
+WAZUH_MANAGER="$VM_SIEM_IP" dpkg -i /tmp/wazuh-agent.deb || apt -f install -y
+systemctl daemon-reload
+systemctl enable --now wazuh-agent
+
+echo "==> Agregando lectura de access.log y eve.json a ossec.conf"
+cat >> /var/ossec/etc/ossec.conf <<'EOF'
+  <localfile>
+    <log_format>apache</log_format>
+    <location>/var/log/dvwa/access.log</location>
+  </localfile>
+  <localfile>
+    <log_format>json</log_format>
+    <location>/var/log/suricata/eve.json</location>
+  </localfile>
+EOF
+systemctl restart wazuh-agent
+
+echo "==> Listo. Verificar conexión del agente con: tail -f /var/ossec/logs/ossec.log"
