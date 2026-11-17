@@ -1,4 +1,4 @@
- Proyecto-Seguridad — Mini SOC para TiendaCR
+Proyecto-Seguridad — Mini SOC para TiendaCR
 
 A basic security operations center (SOC) will be designed and operated for a fictional company: you will deploy a server with a vulnerable web application, protect it with access controls, monitor it using an IDS and a security monitoring system (SIEM/HIDS), launch a controlled attack against it, and demonstrate that your SOC detects and responds.
 
@@ -76,6 +76,27 @@ Las dos VM de Azure están en la misma red virtual privada (`172.16.0.0/24`). El
 Wazuh ejecuta `firewall-drop` (Active Response) cuando se dispara la regla propia `100101` (fuerza bruta), bloqueando la IP de origen en `vm-objetivo` durante 300 segundos. Se verificó en pruebas reales: el ataque de fuerza bruta provocó el bloqueo de la IP del equipo, confirmado por la pérdida de conectividad SSH y HTTP, y la recuperación automática pasado el tiempo configurado.
 
 Riesgo documentado: una respuesta automática puede bloquear tráfico legítimo (incluido el del propio administrador), como se demostró en la prueba.
+
+ Remediación y reevaluación
+
+El módulo de detección de vulnerabilidades de Wazuh encontró en `vm-objetivo` 19 vulnerabilidades críticas, 617 altas, 1217 medias y 211 bajas (concentradas en `linux-azure` y `lxd`), y la evaluación de configuración (SCA) contra el benchmark CIS Ubuntu 22.04 LTS dio un puntaje de 49% (98 controles aprobados, 99 fallidos).
+
+Como remediación inmediata se aplicaron las actualizaciones de seguridad pendientes del sistema operativo en `vm-objetivo`:
+
+```
+sudo apt update
+apt list --upgradable   # distro-info, python3-distro-info, sosreport
+sudo apt upgrade -y
+```
+
+El kernel ya estaba al día, por lo que no fue necesario reiniciar la VM. Tras el parche se repitieron los ataques 2 (fuerza bruta) y 3 (inyección SQL) con los mismos parámetros, para comparar la detección antes y después:
+
+| Ataque | Antes del parche | Después del parche |
+|---|---|---|
+| Inyección SQL (UNION SELECT) | Detectada por `sid:1000001` (13/nov/2026) | Detectada de nuevo por `sid:1000001` + regla ET por defecto (17/nov/2026, 14:30–14:34 UTC) |
+| Fuerza bruta (Hydra) | Detectada por reglas 100100/100101; Active Response bloqueó la IP | Comportamiento idéntico: reglas 100100/100101 se dispararon de nuevo (14:50:43 UTC) y el Active Response volvió a bloquear la IP |
+
+**Conclusión:** la detección y la respuesta automática no se vieron afectadas por el parche del sistema operativo, porque las reglas detectan el patrón del tráfico de ataque y no dependen de la versión de los paquetes del SO. El parche tampoco cerró la inyección SQL en sí, ya que esa vulnerabilidad vive en la aplicación (DVWA), no en el sistema operativo — DVWA está hecha a propósito para seguir siendo vulnerable.
 
  Declaración de uso de IA
 
