@@ -144,3 +144,25 @@ Diagramas, configuraciones y capturas de referencia:
  Declaración de uso de IA
 
 Se utilizó Claude (Anthropic) como asistente durante el desarrollo del proyecto, para: guiar la configuración paso a paso de Azure, Wazuh, Suricata y UFW; depurar errores de sintaxis en reglas personalizadas. Todas las decisiones de diseño, la ejecución de comandos y la verificación de resultados fueron realizadas por la autora.
+
+```mermaid
+flowchart TD
+    A[Ataque de fuerza bruta - Hydra, POST a login.php] --> B[Suricata detecta - Regla propia sid 1000002]
+    B --> C[Agente Wazuh - Envia evento por 1514 tcp, red privada]
+    C --> D[Wazuh manager evalua - Regla 100101, umbral 5 intentos en 10s]
+    D --> E[Respuesta automatica - Active Response firewall-drop, bloqueo 300s]
+```
+
+```mermaid
+flowchart LR
+    KALI[Kali Linux - Atacante Nmap Hydra curl SQLi]
+    NAV[Navegador SSH - Panel Wazuh y acceso admin]
+    OBJ[vm-objetivo 172.16.0.5 priv 4.227.104.113 pub - DVWA mas Agente Wazuh mas Suricata]
+    SIEM[vm-siem 172.16.0.4 priv 20.125.125.96 pub - Wazuh manager mas dashboard]
+
+    KALI -->|HTTP 80| OBJ
+    NAV -->|SSH 22 HTTPS 443| OBJ
+    NAV -->|SSH 22 HTTPS 443| SIEM
+    OBJ -->|1514 1515 red privada| SIEM
+    SIEM -.->|Active Response| OBJ
+```
