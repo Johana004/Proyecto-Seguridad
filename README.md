@@ -147,22 +147,34 @@ Se utilizó Claude (Anthropic) como asistente durante el desarrollo del proyecto
 
 ```mermaid
 flowchart TD
-    A[Ataque de fuerza bruta - Hydra, POST a login.php] --> B[Suricata detecta - Regla propia sid 1000002]
-    B --> C[Agente Wazuh - Envia evento por 1514 tcp, red privada]
-    C --> D[Wazuh manager evalua - Regla 100101, umbral 5 intentos en 10s]
-    D --> E[Respuesta automatica - Active Response firewall-drop, bloqueo 300s]
+    A["Ataque de fuerza bruta\nHydra, POST a /login.php"] --> B["Suricata detecta\nRegla propia sid 1000002"]
+    B --> C["Agente Wazuh\nEnvia evento por 1514/tcp, red privada"]
+    C --> D["Wazuh manager evalua\nRegla 100101, umbral 5 intentos en 10s"]
+    D --> E["Respuesta automatica\nActive Response firewall-drop, bloqueo 300s"]
+    E --> F["Tecnica MITRE ATTCK T1110 - Brute Force"]
 ```
 
 ```mermaid
 flowchart LR
-    KALI[Kali Linux - Atacante Nmap Hydra curl SQLi]
-    NAV[Navegador SSH - Panel Wazuh y acceso admin]
-    OBJ[vm-objetivo 172.16.0.5 priv 4.227.104.113 pub - DVWA mas Agente Wazuh mas Suricata]
-    SIEM[vm-siem 172.16.0.4 priv 20.125.125.96 pub - Wazuh manager mas dashboard]
+    subgraph LOCAL["Equipos autorizados (casa y universidad)"]
+        KALI["Kali Linux\nAtacante (Nmap, Hydra, curl/SQLi)"]
+        NAV["Navegador / SSH\nPanel Wazuh (443) y admin (22)"]
+    end
+
+    subgraph AZURE["Red virtual Azure (172.16.0.0/24)"]
+        subgraph NSG["NSG - firewall de nube"]
+            subgraph UFW1["UFW - firewall local"]
+                OBJ["vm-objetivo\n172.16.0.5 priv / 4.227.104.113 pub\nDVWA + Agente Wazuh + Suricata IDS\nPuertos 22, 80"]
+            end
+            subgraph UFW2["UFW - firewall local"]
+                SIEM["vm-siem\n172.16.0.4 priv / 20.125.125.96 pub\nWazuh manager + dashboard\nPuertos 22, 443"]
+            end
+        end
+    end
 
     KALI -->|HTTP 80| OBJ
-    NAV -->|SSH 22 HTTPS 443| OBJ
-    NAV -->|SSH 22 HTTPS 443| SIEM
+    NAV -->|SSH 22 / HTTPS 443| OBJ
+    NAV -->|SSH 22 / HTTPS 443| SIEM
     OBJ -->|1514 1515 red privada| SIEM
-    SIEM -.->|Active Response| OBJ
+    SIEM -.->|Active Response firewall-drop| OBJ
 ```
